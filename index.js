@@ -17,19 +17,10 @@ const forkedSpecPath = path.join(__dirname, 'data', 'fork.json');
 const storagePath = path.join(__dirname, 'data', 'storage.json');
 
 // Using http endpoint since substrate's Ws endpoint has a size limit.
-const provider = new HttpProvider(process.env.HTTP_RPC_ENDPOINT || 'http://localhost:9933')
-// The storage download will be split into 256^chunksLevel chunks.
-const chunksLevel = process.env.FORK_CHUNKS_LEVEL || 1;
-const totalChunks = Math.pow(256, chunksLevel);
-
+const provider = new WsProvider(process.env.WSS_RPC_ENDPOINT || 'http://localhost:9944')
 const alice = process.env.ALICE || ''
-const originalChain = process.env.ORIG_CHAIN || '';
-const forkChain = process.env.FORK_CHAIN || '';
-
-let chunksFetched = 0;
-let separator = false;
-const progressBar = new cliProgress.SingleBar({}, cliProgress.Presets.shades_classic);
-
+const originalChain = process.env.CHAIN_FROM || '';
+const forkChain = process.env.CHAIN_TO || '';
 /**
  * All module prefixes except those mentioned in the skippedModulesPrefix will be added to this by the script.
  * If you want to add any past module or part of a skipped module, add the prefix here manually.
@@ -74,11 +65,10 @@ async function main() {
     console.log(chalk.yellow('Custom Schema missing, using default schema.'));
     api = await ApiPromise.create({ provider });
   } else {
-    const { types, rpc } = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+    const types = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
     api = await ApiPromise.create({
       provider,
       types,
-      rpc,
     });
   }
 
