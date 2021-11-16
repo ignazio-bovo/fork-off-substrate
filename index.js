@@ -3,7 +3,7 @@ const path = require('path');
 const chalk = require('chalk');
 const cliProgress = require('cli-progress');
 require("dotenv").config();
-const { ApiPromise } = require('@polkadot/api');
+const { ApiPromise, WsProvider } = require('@polkadot/api');
 const { HttpProvider } = require('@polkadot/rpc-provider');
 const { xxhashAsHex } = require('@polkadot/util-crypto');
 const execFileSync = require('child_process').execFileSync;
