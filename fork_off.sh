@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # get env variables
 if [[ -f .env ]]; then
@@ -28,44 +28,50 @@ if ! [[ -f ./data/schema.json ]]; then
     cp ${TYPES_PATH} ./data/schema.json
 fi
 
+if ! [[ -f ./data/builder ]]; then
+    cp ${CHAIN_SPEC_BUILDER} ./data/builder
+fi
+
+
 # the script works by modifying an existing 
 build_raw_spec() {
     echo "{
   \"balances\":[
     [\"${ALICE}\", ${ALICE_INITIAL_BALANCE}]
   ]
-}" > ${DATA_PATH}/initial-balances.json
+}" > ./data/initial-balances.json
 
     # Make Alice a member
-    echo '
+    echo "
   [{
-    "member_id":0,
-    "root_account":${ALICE},
-    "controller_account":${ALICE},
-    "handle":"alice",
-    "avatar_uri":"https://alice.com/avatar.png",
-    "about":"Alice",
-    "registered_at_time":0
+    \"member_id\":0,
+    \"root_account\":\"${ALICE}\",
+    \"controller_account\":\"${ALICE}\",
+    \"handle\":\"alice\",
+    \"avatar_uri\":\"https://alice.com/avatar.png\",
+    \"about\":\"Alice\",
+    \"registered_at_time\":0
   }]
-' > ${DATA_PATH}/initial-members.json
+" > ./data/initial-members.json
 
     # Create a chain spec file with Alice as SUDO
-    ${CHAIN_SPEC_BUILDER} ${BINARY_PATH} \
-			 new \
-			 --authority-seeds Alice \
-			 --sudo-account  ${ALICE} \
-			 --deployment dev \
-			 --chain-spec-path ./data/chain-spec.json \
-			 --initial-balances-path ./data/initial-balances.json \
-			 --initial-members-path ./data/initial-members.json
+    ./data/builder \
+	new \
+	--authority-seeds Alice \
+	--sudo-account  ${ALICE} \
+	--deployment dev \
+	--chain-spec-path ./data/chain-spec.json \
+	--initial-balances-path ./data/initial-balances.json \
+	--initial-members-path ./data/initial-members.json \
 
+    echo "human readable .json done"
     # Convert the chain spec file to a raw chainspec file
-    ${BINARY_PATH} build-spec \
+    ./data/binary build-spec \
 		   --raw --disable-default-bootnode \
-		   --chain /data/chain-spec.json > ./data/${CHAIN_NAME}.json
+		   --chain ./data/chain-spec.json > ./data/${CHAIN_NAME}.json
 
     # remove human readable chainspec & files
-    rm data/{initial-balances,initial-members,chain-spec}.json
+    rm ./data/{initial-balances,initial-members,chain-spec}.json
 }
 
 # copy the executable binary

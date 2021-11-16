@@ -6,20 +6,17 @@ require("dotenv").config();
 const { ApiPromise, WsProvider } = require('@polkadot/api');
 const { HttpProvider } = require('@polkadot/rpc-provider');
 const { xxhashAsHex } = require('@polkadot/util-crypto');
-const execFileSync = require('child_process').execFileSync;
 const execSync = require('child_process').execSync;
-const binaryPath = path.join(__dirname, 'data', 'binary');
 const wasmPath = path.join(__dirname, 'data', 'runtime.wasm');
 const schemaPath = path.join(__dirname, 'data', 'schema.json');
 const hexPath = path.join(__dirname, 'data', 'runtime.hex');
 const storagePath = path.join(__dirname, 'data', 'storage.json');
+const specFile = process.env.CHAIN_NAME + ".json";
+const specPath = path.join(__dirname, 'data', specFile)
 
 // Using http endpoint since substrate's Ws endpoint has a size limit.
 const provider = new WsProvider(process.env.WSS_RPC_ENDPOINT || 'http://localhost:9944')
 const alice = process.env.ALICE || ''
-
-// the chainspec to be updated to reflect the current state
-const specPath = process.env.CHAIN_NAME
 /**
  * All module prefixes except those mentioned in the skippedModulesPrefix will be added to this by the script.
  * If you want to add any past module or part of a skipped module, add the prefix here manually.
@@ -74,11 +71,17 @@ async function main() {
 
     // read storage & chainspec files
     let storage = JSON.parse(fs.readFileSync(storagePath, 'utf8'));
-    let spec = JSON.parse(fs.readFileSync(specPath, 'utf8'));
+    let spec;
+    if (fs.existsSync(specPath)) {
+        spec = JSON.parse(fs.readFileSync(specPath, 'utf8'));
+    } else {
+	console.log(chalk.red(specPath))
+        throw new Error("Error: starting chain spec file not found");
+    }
 
     // Grab the items to be moved, then iterate through and insert into storage
     storage
-        .results
+        .result
         .filter((i) => prefixes.some((prefix) => i[0].startsWith(prefix)))
         .forEach(([key, value]) => (spec.genesis.raw.top[key] = value));
 
