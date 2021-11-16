@@ -50,7 +50,7 @@ build_raw_spec() {
 ' > ${DATA_PATH}/initial-members.json
 
     # Create a chain spec file with Alice as SUDO
-    ./chain-spec-builder ${BINARY_PATH} \
+    ${CHAIN_SPEC_BUILDER} ${BINARY_PATH} \
 			 new \
 			 --authority-seeds Alice \
 			 --sudo-account  ${ALICE} \
@@ -62,12 +62,15 @@ build_raw_spec() {
     # Convert the chain spec file to a raw chainspec file
     ${BINARY_PATH} build-spec \
 		   --raw --disable-default-bootnode \
-		   --chain /data/chain-spec.json > ./data/${CHAIN_FORK}.json
+		   --chain /data/chain-spec.json > ./data/${CHAIN_NAME}.json
 
     # remove human readable chainspec & files
     rm data/{initial-balances,initial-members,chain-spec}.json
 }
 
 # copy the executable binary
+
+build_raw_spec
+echo "STARTING chain-spec generated"
 npm start
 

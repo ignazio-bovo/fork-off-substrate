@@ -12,15 +12,14 @@ const binaryPath = path.join(__dirname, 'data', 'binary');
 const wasmPath = path.join(__dirname, 'data', 'runtime.wasm');
 const schemaPath = path.join(__dirname, 'data', 'schema.json');
 const hexPath = path.join(__dirname, 'data', 'runtime.hex');
-const originalSpecPath = path.join(__dirname, 'data', 'genesis.json');
-const forkedSpecPath = path.join(__dirname, 'data', 'fork.json');
 const storagePath = path.join(__dirname, 'data', 'storage.json');
 
 // Using http endpoint since substrate's Ws endpoint has a size limit.
 const provider = new WsProvider(process.env.WSS_RPC_ENDPOINT || 'http://localhost:9944')
 const alice = process.env.ALICE || ''
-const originalChain = process.env.CHAIN_ORIG || '';
-const forkChain = process.env.CHAIN_FORK || '';
+
+// the chainspec to be updated to reflect the current state
+const specPath = process.env.CHAIN_NAME
 /**
  * All module prefixes except those mentioned in the skippedModulesPrefix will be added to this by the script.
  * If you want to add any past module or part of a skipped module, add the prefix here manually.
@@ -37,124 +36,72 @@ const forkChain = process.env.CHAIN_FORK || '';
 let prefixes = ['0x26aa394eea5630e07c48ae0c9558cef7b99d880ec681799c0cf30e8886371da9' /* System.Account */];
 const skippedModulesPrefix = ['System', 'Session', 'Babe', 'Grandpa', 'GrandpaFinality', 'FinalityTracker', 'Authorship'];
 
-async function fixParachinStates (api, forkedSpec) {
+async function fixParachinStates(api, forkedSpec) {
     const skippedKeys = [
-	api.query.parasScheduler.sessionStartBlock.key()
+        api.query.parasScheduler.sessionStartBlock.key()
     ];
     for (const k of skippedKeys) {
-	delete forkedSpec.genesis.raw.top[k];
+        delete forkedSpec.genesis.raw.top[k];
     }
 }
 
 async function main() {
-    if (!fs.existsSync(binaryPath)) {
-	console.log(chalk.red('Binary missing. Please copy the binary of your substrate node to the data folder and rename the binary to "binary"'));
-	process.exit(1);
-    }
-    execFileSync('chmod', ['+x', binaryPath]);
-
-    if (!fs.existsSync(wasmPath)) {
-	console.log(chalk.red('WASM missing. Please copy the WASM blob of your substrate node to the data folder and rename it to "runtime.wasm"'));
-	process.exit(1);
-    }
     execSync('cat ' + wasmPath + ' | hexdump -ve \'/1 "%02x"\' > ' + hexPath);
 
+    // initialize api
     let api;
-    console.log(chalk.green('We are intentionally using the HTTP endpoint. If you see any warnings about that, please ignore them.'));
     if (!fs.existsSync(schemaPath)) {
-	console.log(chalk.yellow('Custom Schema missing, using default schema.'));
-	api = await ApiPromise.create({ provider });
+        console.log(chalk.yellow('Custom Schema missing, using default schema.'));
+        api = await ApiPromise.create({ provider });
     } else {
-	const types = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
-	api = await ApiPromise.create({
-	    provider,
-	    types,
-	});
+        const types = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
+        api = await ApiPromise.create({
+            provider,
+            types,
+        });
     }
-
-    if (fs.existsSync(storagePath)) {
-	console.log(chalk.yellow('Reusing cached storage. Delete ./data/storage.json and rerun the script if you want to fetch latest storage'));
-    } else {
-	// Download state of original chain
-	console.log(chalk.green('Fetching current state of the live chain. Please wait, it can take a while depending on the size of your chain.'));
-	let at = (await api.rpc.chain.getBlockHash()).toString();
-	progressBar.start(totalChunks, 0);
-	const stream = fs.createWriteStream(storagePath, { flags: 'a' });
-	stream.write("[");
-	await fetchChunks("0x", chunksLevel, stream, at);
-	stream.write("]");
-	stream.end();
-	progressBar.stop();
-    }
-
     const metadata = await api.rpc.state.getMetadata();
+
     // Populate the prefixes array
     const modules = JSON.parse(metadata.asLatest.pallets);
     modules.forEach((module) => {
-	if (module.storage) {
-	    if (!skippedModulesPrefix.includes(module.storage.prefix)) {
-		prefixes.push(xxhashAsHex(module.storage.prefix, 128));
-	    }
-	}
+        if (module.storage) {
+            if (!skippedModulesPrefix.includes(module.storage.prefix)) {
+                prefixes.push(xxhashAsHex(module.storage.prefix, 128));
+            }
+        }
     });
 
-    // Generate chain spec to be modified
-    execSync(binaryPath + ` build-spec --chain ${forkChain} --raw > ` + forkedSpecPath);
-
+    // read storage & chainspec files
     let storage = JSON.parse(fs.readFileSync(storagePath, 'utf8'));
-    let forkedSpec = JSON.parse(fs.readFileSync(forkedSpecPath, 'utf8'));
+    let spec = JSON.parse(fs.readFileSync(specPath, 'utf8'));
 
     // Grab the items to be moved, then iterate through and insert into storage
     storage
-	.results
-	.filter((i) => prefixes.some((prefix) => i[0].startsWith(prefix)))
-	.forEach(([key, value]) => (forkedSpec.genesis.raw.top[key] = value));
+        .results
+        .filter((i) => prefixes.some((prefix) => i[0].startsWith(prefix)))
+        .forEach(([key, value]) => (spec.genesis.raw.top[key] = value));
 
     // Delete System.LastRuntimeUpgrade to ensure that the on_runtime_upgrade event is triggered
-    delete forkedSpec.genesis.raw.top['0x26aa394eea5630e07c48ae0c9558cef7f9cce9c888469bb1a0dceaa129672ef8'];
+    delete spec.genesis.raw.top['0x26aa394eea5630e07c48ae0c9558cef7f9cce9c888469bb1a0dceaa129672ef8'];
 
-    fixParachinStates(api, forkedSpec);
+    fixParachinStates(api, spec);
 
     // Set the code to the current runtime code
-    forkedSpec.genesis.raw.top['0x3a636f6465'] = '0x' + fs.readFileSync(hexPath, 'utf8').trim();
+    spec.genesis.raw.top['0x3a636f6465'] = '0x' + fs.readFileSync(hexPath, 'utf8').trim();
 
     // To prevent the validator set from changing mid-test, set Staking.ForceEra to ForceNone ('0x02')
-    forkedSpec.genesis.raw.top['0x5f3e4907f716ac89b6347d15ececedcaf7dad0317324aecae8744b87fc95f2f3'] = '0x02';
+    spec.genesis.raw.top['0x5f3e4907f716ac89b6347d15ececedcaf7dad0317324aecae8744b87fc95f2f3'] = '0x02';
 
     if (alice !== '') {
-	// Set sudo key to //Alice
-	forkedSpec.genesis.raw.top['0x5c0d1176a568c1f92944340dbfed9e9c530ebca703c85910e7164cb7d1c9e47b'] = '0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d';
+        // Set sudo key to //Alice
+        spec.genesis.raw.top['0x5c0d1176a568c1f92944340dbfed9e9c530ebca703c85910e7164cb7d1c9e47b'] = '0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d';
     }
 
-    fs.writeFileSync(forkedSpecPath, JSON.stringify(forkedSpec, null, 4));
+    fs.writeFileSync(specPath, JSON.stringify(spec, null, 4));
 
-    console.log('Forked genesis generated successfully. Find it at ./data/fork.json');
+    console.log(chalk.green('Updated STARTING chainspec in order to reflect state: find it at ' + specPath));
     process.exit();
 }
 
 main();
-
-async function fetchChunks(prefix, levelsRemaining, stream, at) {
-    if (levelsRemaining <= 0) {
-	const pairs = await provider.send('state_getPairs', [prefix, at]);
-	if (pairs.length > 0) {
-	    separator ? stream.write(",") : separator = true;
-	    stream.write(JSON.stringify(pairs).slice(1, -1));
-	}
-	progressBar.update(++chunksFetched);
-	return;
-    }
-
-    // Async fetch the last level
-    if (process.env.QUICK_MODE && levelsRemaining == 1) {
-	let promises = [];
-	for (let i = 0; i < 256; i++) {
-	    promises.push(fetchChunks(prefix + i.toString(16).padStart(2, "0"), levelsRemaining - 1, stream, at));
-	}
-	await Promise.all(promises);
-    } else {
-	for (let i = 0; i < 256; i++) {
-	    await fetchChunks(prefix + i.toString(16).padStart(2, "0"), levelsRemaining - 1, stream, at);
-	}
-    }
-}
