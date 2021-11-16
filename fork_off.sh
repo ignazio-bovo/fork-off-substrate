@@ -1,20 +1,32 @@
 #!/bin/bash
 
 # get env variables
-if [-f .env]; then
+if [ -f .env ]; then
     source .env
 fi
 
 # create data folder
-mkdir data
+if [ -d ./data ]; then
+    mkdir data
+fi
 
 # copy storage dump
-scp ${REMOTE_STORAGE_DUMP_ADDRESS} ./data/storage.json
+if [ -f ./data/storage.json ]; then
+    scp ${REMOTE_STORAGE_DUMP_ADDRESS} ./data/storage.json
+fi
 
 # copy required elements to data folder
-cp ${BINARY_PATH} ./data/binary
-cp ${WASM_PATH} ./data/runtime.wasm
-cp ${TYPES_PATH} ./data/schema.json
+if [ -f ./data/binary ]; then
+    cp ${BINARY_PATH} ./data/binary
+fi
+
+if [ -f ./data/runtime.wasm ]; then
+    cp ${WASM_PATH} ./data/runtime.wasm
+fi
+
+if [ -f ./data/schema.json ]; then
+    cp ${TYPES_PATH} ./data/schema.json
+fi
 
 # copy the executable binary
 npm start
